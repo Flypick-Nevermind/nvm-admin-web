@@ -353,3 +353,67 @@ export const MOCK_VOUCHERS: Voucher[] = [
     is_active: false,
   },
 ];
+
+// ─── Bag Requests (Jastip) ───────────────────────────────────────────────────
+
+import { BagRequest } from '@/types';
+
+export const MOCK_BAG_REQUESTS: BagRequest[] = [
+  {
+    request_id: 'REQ-2026-001',
+    customer_name: 'Sabrina Wibowo',
+    customer_whatsapp: '081289123456',
+    bag_name: 'Silver Metallic Heart Pillow Bag (XiaoHongShu Viral)',
+    reference_url: 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7?w=600&q=80',
+    budget: 'Rp 200.000 – Rp 350.000',
+    notes: 'Mau yang rantainya tebal dan ada charm pita kecil kalau bisa ya min',
+    status: 'searching',
+    supplier_link: 'https://item.taobao.com/item.htm?id=782910291',
+    supplier_cost_cny: 48,
+    quoted_price_idr: 285000,
+    created_at: '2026-10-01T11:20:00.000Z',
+  },
+  {
+    request_id: 'REQ-2026-002',
+    customer_name: 'Alika Chandra',
+    customer_whatsapp: '081399887766',
+    bag_name: 'Chunky Knit Wool Cloud Tote — Lilac',
+    reference_url: 'https://images.unsplash.com/photo-1544816155-12df9643f363?w=600&q=80',
+    budget: 'Di bawah Rp 200.000',
+    notes: 'Cari warna soft purple pastel persis kayak di foto ini',
+    status: 'pending',
+    created_at: '2026-10-02T04:15:00.000Z',
+  },
+  {
+    request_id: 'REQ-2026-003',
+    customer_name: 'Jessica Tan',
+    customer_whatsapp: '081900112233',
+    bag_name: 'Vintage Distressed Leather Slouchy Hobo Bag',
+    reference_url: 'https://images.unsplash.com/photo-1591561954557-26941169b49e?w=600&q=80',
+    budget: 'Rp 350.000 – Rp 500.000',
+    notes: 'Muat laptop 13 inch yaa',
+    status: 'quoted',
+    supplier_link: 'https://detail.1688.com/offer/692019281.html',
+    supplier_cost_cny: 65,
+    quoted_price_idr: 345000,
+    created_at: '2026-09-30T16:00:00.000Z',
+  },
+];
+
+export async function fetchBagRequests(): Promise<BagRequest[]> {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('nvm_admin_bag_requests');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+  }
+  return MOCK_BAG_REQUESTS;
+}
+
+export function saveBagRequests(requests: BagRequest[]): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('nvm_admin_bag_requests', JSON.stringify(requests));
+  }
+}

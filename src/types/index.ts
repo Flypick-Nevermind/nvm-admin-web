@@ -90,3 +90,20 @@ export interface Voucher {
   is_active: boolean;
   expires_at?: string;
 }
+
+export type BagRequestStatus = 'pending' | 'searching' | 'quoted' | 'converted' | 'cancelled';
+
+export interface BagRequest {
+  request_id: string;
+  customer_name: string;
+  customer_whatsapp: string;
+  bag_name: string;
+  reference_url?: string;
+  budget?: string;
+  notes?: string;
+  status: BagRequestStatus;
+  supplier_link?: string;
+  supplier_cost_cny?: number;
+  quoted_price_idr?: number;
+  created_at: string;
+}

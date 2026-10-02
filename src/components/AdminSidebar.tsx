@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Package,
   ShoppingBag,
+  Sparkles,
   Tags,
   TicketPercent,
   ExternalLink,
@@ -28,6 +29,12 @@ const navItems = [
     href: '/products',
     icon: Package,
     badge: 'Live',
+  },
+  {
+    name: 'Request Bag / Jastip',
+    href: '/requests',
+    icon: Sparkles,
+    badge: '3 Baru',
   },
   {
     name: 'Pesanan & Tracking',
@@ -75,7 +82,7 @@ export function AdminSidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-6 space-y-1">
-        <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-zinc-300">
+        <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
           Menu Utama
         </div>
         {navItems.map((item) => {
@@ -105,6 +112,8 @@ export function AdminSidebar() {
                   className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                     item.badge === 'Live'
                       ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : item.badge.includes('Baru')
+                      ? 'bg-pink-500/20 text-pink-300 border border-pink-500/30'
                       : 'bg-zinc-800 text-zinc-300'
                   }`}
                 >
@@ -115,7 +124,7 @@ export function AdminSidebar() {
           );
         })}
 
-        <div className="pt-6 px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-zinc-300">
+        <div className="pt-6 px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
           Akses Eksternal
         </div>
         <a
@@ -147,7 +156,7 @@ export function AdminSidebar() {
           <button
             onClick={logout}
             title="Keluar"
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
           </button>
