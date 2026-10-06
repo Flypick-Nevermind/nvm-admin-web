@@ -17,7 +17,13 @@ export interface ProductCategoryType {
 
 export interface ProductVariantImage {
   product_variant_image_id?: string;
+  product_variant_id?: string;
+  image_provider_id?: string;
   product_variant_image_value: string;
+  ms_nevermind_image_provider?: {
+    image_provider_id?: string;
+    image_provider_name?: string;
+  };
 }
 
 export interface ProductVariant {
@@ -47,7 +53,8 @@ export interface Product {
   created_at?: string;
   updated_at?: string;
   ms_nevermind_product_categories?: ProductCategoryRelation[];
-  ms_nevermind_product_variants?: ProductVariant;
+  ms_nevermind_product_variants?: ProductVariant | ProductVariant[];
+  all_variants?: ProductVariant[];
 }
 
 export interface OrderItem {

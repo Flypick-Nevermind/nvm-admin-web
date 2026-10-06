@@ -1,6 +1,6 @@
-import { Product, ProductCategoryType, Order, Voucher, OrderStatus } from '@/types';
+import { Product, ProductCategoryType, Order, Voucher, OrderStatus, ProductVariant } from '@/types';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://service-nvm-production.up.railway.app/api';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://service-nvm-production.up.railway.app/api-admin';
 
 export function getAdminToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -18,7 +18,9 @@ export async function adminApiClient<T>(endpoint: string, options: RequestInit =
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const url = `${BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const cleanBase = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = `${cleanBase}${cleanEndpoint}`;
 
   try {
     const res = await fetch(url, {
@@ -44,34 +46,128 @@ export async function fetchProducts(): Promise<Product[]> {
   try {
     const res = await adminApiClient<{ success: boolean; data: Product[] }>('/products');
     if (res.success && Array.isArray(res.data)) {
+      // Normalize variant structure if backend returns an array or single object
+      return res.data.map((p) => {
+        let variant = p.ms_nevermind_product_variants;
+        if (Array.isArray(variant)) {
+          variant = variant[0];
+        }
+        return {
+          ...p,
+          ms_nevermind_product_variants: variant,
+        };
+      });
+    }
+  } catch (err) {
+    console.warn('⚠️ Gagal mengambil produk dari backend, menggunakan data fallback:', err);
+  }
+  return MOCK_ADMIN_PRODUCTS;
+}
+
+export async function fetchProductById(productId: string): Promise<Product | null> {
+  try {
+    const res = await adminApiClient<{ success: boolean; data: Product }>(`/products/${productId}`);
+    if (res.success && res.data) {
       return res.data;
     }
   } catch (err) {
-    console.warn('⚠️ Gagal mengambil produk dari backend, menggunakan data demo fallback:', err);
+    console.error(`Gagal mengambil detail produk ${productId}:`, err);
   }
-  return MOCK_ADMIN_PRODUCTS;
+  return null;
+}
+
+export function parseCleanNumber(val: string | number): number | '' {
+  if (val === '' || val === null || val === undefined) return '';
+  const digitsOnly = String(val).replace(/[^\d]/g, '');
+  if (digitsOnly === '') return '';
+  const noLeadingZero = digitsOnly.replace(/^0+(?=\d)/, '');
+  return Number(noLeadingZero);
+}
+
+/**
+ * Format & normalize image URLs.
+ * If the link is a Google Drive share link (e.g. https://drive.google.com/file/d/ID/view?usp=sharing),
+ * it converts it to Google's direct CDN image URL: https://lh3.googleusercontent.com/d/ID
+ * which renders seamlessly inside <img> elements.
+ */
+export function formatImageUrl(url: string | null | undefined): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (trimmed.includes('drive.google.com') || trimmed.includes('docs.google.com')) {
+    const match =
+      trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+      trimmed.match(/\/d\/([a-zA-Z0-9_-]+)/) ||
+      trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      return `https://lh3.googleusercontent.com/d/${match[1]}`;
+    }
+  }
+  return trimmed;
+}
+
+
+export interface ProductVariantItemInput {
+  variant_name: string;
+  variant_description?: string;
+  variant_price: number | string;
+  variant_qty: number | string;
+  image_urls?: string[];
+  image_url?: string;
 }
 
 export async function createProduct(payload: {
   product_name: string;
   product_description: string;
   category_type_id: string;
-  variant_name: string;
-  variant_price: number;
-  variant_qty: number;
-  image_url: string;
+  variant_name?: string;
+  variant_description?: string;
+  variant_price?: number | string;
+  variant_qty?: number | string;
+  image_url?: string;
+  image_urls?: string[];
+  variants?: ProductVariantItemInput[];
 }): Promise<boolean> {
+  // Support both array of variants or single fallback
+  const variantList: ProductVariantItemInput[] =
+    payload.variants && payload.variants.length > 0
+      ? payload.variants
+      : [
+          {
+            variant_name: payload.variant_name || 'Standard',
+            variant_description: payload.variant_description || payload.product_description,
+            variant_price: payload.variant_price || 0,
+            variant_qty: payload.variant_qty || 1,
+            image_urls: payload.image_urls || (payload.image_url ? [payload.image_url] : []),
+          },
+        ];
+
   const body = {
     product_name: payload.product_name,
     product_description: payload.product_description,
-    categories: [{ product_category_type_id: payload.category_type_id }],
-    variants: {
-      product_variant_name: payload.variant_name,
-      product_variant_description: payload.product_description,
-      product_variant_price: payload.variant_price.toString(),
-      product_variant_qty: payload.variant_qty,
-      images: [{ product_variant_image_value: payload.image_url }],
-    },
+    ms_nevermind_product_category: payload.category_type_id
+      ? [{ product_category_type_id: payload.category_type_id }]
+      : [],
+    ms_nevermind_product_variant: variantList.map((v) => {
+      const urls = (v.image_urls && v.image_urls.length > 0
+        ? v.image_urls
+        : v.image_url
+        ? [v.image_url]
+        : []
+      ).filter(Boolean);
+
+      const images = urls.map((url) => ({
+        image_provider_id: 'IPID-000002',
+        product_variant_image_value: formatImageUrl(url),
+      }));
+
+      return {
+        product_variant_name: v.variant_name,
+        product_variant_description: v.variant_description || payload.product_description,
+        product_variant_price: Number(v.variant_price) || 0,
+        product_variant_qty: Number(v.variant_qty) || 0,
+        ms_nevermind_product_variant_image: images,
+      };
+    }),
   };
 
   try {
@@ -80,18 +176,165 @@ export async function createProduct(payload: {
       body: JSON.stringify(body),
     });
     return res.success;
+  } catch (err) {
+    console.error('Create product failed:', err);
+    return false;
+  }
+}
+
+export async function updateProduct(payload: {
+  product_id: string;
+  product_name: string;
+  product_description: string;
+  is_active: boolean;
+}): Promise<boolean> {
+  try {
+    const res = await adminApiClient<{ success: boolean }>('/products', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return res.success;
+  } catch (err) {
+    console.error('Update product failed:', err);
+    return false;
+  }
+}
+
+export async function deleteProduct(productId: string, currentProduct?: Product): Promise<boolean> {
+  try {
+    // Backend doesn't provide DELETE /products, so deactivate product
+    const res = await updateProduct({
+      product_id: productId,
+      product_name: currentProduct?.product_name || 'Product',
+      product_description: currentProduct?.product_description || '',
+      is_active: false,
+    });
+    return res;
   } catch {
     return false;
   }
 }
 
-export async function deleteProduct(productId: string): Promise<boolean> {
+// ─── Product Variants API ───────────────────────────────────────────────────
+
+export async function fetchProductVariants(productId: string): Promise<ProductVariant[]> {
   try {
-    const res = await adminApiClient<{ success: boolean }>(`/products/${productId}`, {
+    const res = await adminApiClient<{ success: boolean; data: ProductVariant[] }>(
+      `/product-variants/${productId}`
+    );
+    if (res.success && Array.isArray(res.data)) {
+      return res.data;
+    }
+  } catch (err) {
+    console.error(`Gagal mengambil variants untuk ${productId}:`, err);
+  }
+  return [];
+}
+
+export interface VariantImageItem {
+  product_variant_image_id?: string;
+  product_variant_id?: string;
+  image_provider_id?: string;
+  product_variant_image_value: string;
+}
+
+export interface UpdateProductVariantInput {
+  product_variant_id: string;
+  product_id: string;
+  product_variant_name: string;
+  product_variant_description?: string;
+  product_variant_price: number | string;
+  product_variant_qty: number | string;
+  is_active: boolean;
+  images?: VariantImageItem[];
+  image_urls?: string[];
+  image_url?: string;
+  product_variant_image_id?: string;
+  image_provider_id?: string;
+}
+
+export async function updateProductVariant(payload: UpdateProductVariantInput): Promise<boolean> {
+  try {
+    let formattedImages: Array<{
+      product_variant_image_id: string;
+      product_variant_id: string;
+      image_provider_id: string;
+      product_variant_image_value: string;
+    }> = [];
+
+    if (payload.images && payload.images.length > 0) {
+      formattedImages = payload.images
+        .filter((img) => img.product_variant_image_value?.trim())
+        .map((img, i) => ({
+          product_variant_image_id:
+            img.product_variant_image_id || `PVIID-${Date.now()}-${i}`,
+          product_variant_id: payload.product_variant_id,
+          image_provider_id: img.image_provider_id || 'IPID-000002',
+          product_variant_image_value: formatImageUrl(img.product_variant_image_value),
+        }));
+    } else if (payload.image_urls && payload.image_urls.length > 0) {
+      formattedImages = payload.image_urls
+        .filter((url) => url?.trim())
+        .map((url, i) => ({
+          product_variant_image_id: `PVIID-${Date.now()}-${i}`,
+          product_variant_id: payload.product_variant_id,
+          image_provider_id: 'IPID-000002',
+          product_variant_image_value: formatImageUrl(url),
+        }));
+    } else if (payload.image_url?.trim()) {
+      formattedImages = [
+        {
+          product_variant_image_id: payload.product_variant_image_id || 'PVIID-000001',
+          product_variant_id: payload.product_variant_id,
+          image_provider_id: payload.image_provider_id || 'IPID-000002',
+          product_variant_image_value: formatImageUrl(payload.image_url),
+        },
+      ];
+    }
+
+    const body = {
+      product_variant_id: payload.product_variant_id,
+      product_id: payload.product_id,
+      product_variant_name: payload.product_variant_name,
+      product_variant_description: payload.product_variant_description || '',
+      product_variant_price: Number(payload.product_variant_price) || 0,
+      product_variant_qty: Number(payload.product_variant_qty) || 0,
+      is_active: payload.is_active,
+      ms_nevermind_product_variant_image: formattedImages,
+    };
+
+    const res = await adminApiClient<{ success: boolean }>('/product-variants', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    return res.success;
+  } catch (err) {
+    console.error('Update variant failed:', err);
+    return false;
+  }
+}
+
+export async function updateMultipleProductVariants(
+  variants: UpdateProductVariantInput[]
+): Promise<boolean> {
+  if (!variants || variants.length === 0) return true;
+  try {
+    const results = await Promise.all(variants.map((v) => updateProductVariant(v)));
+    return results.every(Boolean);
+  } catch (err) {
+    console.error('Update multiple variants failed:', err);
+    return false;
+  }
+}
+
+export async function deleteProductVariant(variantId: string): Promise<boolean> {
+  try {
+    const res = await adminApiClient<{ success: boolean }>(`/product-variants/${variantId}`, {
       method: 'DELETE',
     });
     return res.success;
-  } catch {
+  } catch (err) {
+    console.error('Delete variant failed:', err);
     return false;
   }
 }
@@ -100,7 +343,9 @@ export async function deleteProduct(productId: string): Promise<boolean> {
 
 export async function fetchCategories(): Promise<ProductCategoryType[]> {
   try {
-    const res = await adminApiClient<{ success: boolean; data: ProductCategoryType[] }>('/product-category-types');
+    const res = await adminApiClient<{ success: boolean; data: ProductCategoryType[] }>(
+      '/product-category-types'
+    );
     if (res.success && Array.isArray(res.data)) {
       return res.data;
     }
@@ -109,11 +354,49 @@ export async function fetchCategories(): Promise<ProductCategoryType[]> {
   }
   return [
     { product_category_type_id: 'PCTID-53f59bf2b3a1', product_category_type_name: 'bag' },
-    { product_category_type_id: 'PCTID-5128c34d76b9', product_category_type_name: 'shoulder-bag' },
-    { product_category_type_id: 'PCTID-cute-finds', product_category_type_name: 'cute-finds' },
-    { product_category_type_id: 'PCTID-y2k-core', product_category_type_name: 'y2k-core' },
-    { product_category_type_id: 'PCTID-silver-vibes', product_category_type_name: 'silver-vibes' },
+    { product_category_type_id: 'PCTID-5128c34d76b9', product_category_type_name: 'tool' },
   ];
+}
+
+export async function createCategoryType(categoryName: string): Promise<boolean> {
+  try {
+    const res = await adminApiClient<{ success: boolean }>('/product-category-types', {
+      method: 'POST',
+      body: JSON.stringify({ product_category_type_name: categoryName.trim() }),
+    });
+    return res.success;
+  } catch (err) {
+    console.error('Create category type failed:', err);
+    return false;
+  }
+}
+
+export async function addProductCategory(productId: string, categoryTypeId: string): Promise<boolean> {
+  try {
+    const res = await adminApiClient<{ success: boolean }>('/product-categories', {
+      method: 'POST',
+      body: JSON.stringify({
+        product_id: productId,
+        product_category_type_id: categoryTypeId,
+      }),
+    });
+    return res.success;
+  } catch (err) {
+    console.error('Add product category failed:', err);
+    return false;
+  }
+}
+
+export async function deleteProductCategory(productCategoryId: string): Promise<boolean> {
+  try {
+    const res = await adminApiClient<{ success: boolean }>(`/product-categories/${productCategoryId}`, {
+      method: 'DELETE',
+    });
+    return res.success;
+  } catch (err) {
+    console.error('Delete product category failed:', err);
+    return false;
+  }
 }
 
 // ─── Orders & Vouchers Local Persistence / Mock ─────────────────────────────

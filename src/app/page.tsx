@@ -233,6 +233,80 @@ export default function AdminDashboardPage() {
             </table>
           </div>
         </div>
+
+        {/* Live Products Quick Overview */}
+        <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-pink-500/10 flex items-center justify-center text-pink-400">
+                <Package className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Katalog Produk Live (Railway)
+                </h3>
+                <p className="text-xs text-zinc-500">Produk yang saat ini aktif & tersinkronisasi di backend</p>
+              </div>
+            </div>
+            <Link
+              href="/products"
+              className="text-xs text-pink-400 hover:text-pink-300 font-semibold flex items-center gap-1"
+            >
+              Kelola Semua Produk
+              <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {products.slice(0, 3).map((prod) => {
+              const variant = Array.isArray(prod.ms_nevermind_product_variants)
+                ? prod.ms_nevermind_product_variants[0]
+                : prod.ms_nevermind_product_variants;
+
+              const imageUrl =
+                variant?.ms_nevermind_product_variant_images?.[0]?.product_variant_image_value ||
+                'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=600&q=80';
+
+              const price = variant?.product_variant_price ? Number(variant.product_variant_price) : 0;
+              const stock = variant?.product_variant_qty ?? 0;
+
+              return (
+                <div
+                  key={prod.product_id}
+                  className="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 flex items-center gap-3 hover:border-zinc-700 transition"
+                >
+                  <div className="w-14 h-14 rounded-lg bg-zinc-800 overflow-hidden shrink-0">
+                    <img
+                      src={imageUrl}
+                      alt={prod.product_name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src =
+                          'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=600&q=80';
+                      }}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-zinc-100 text-sm truncate">{prod.product_name}</p>
+                    <p className="text-xs font-bold text-pink-400 mt-0.5">
+                      Rp {price.toLocaleString('id-ID')}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[11px] text-zinc-400">Stok: {stock} pcs</span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                          prod.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-800 text-zinc-500'
+                        }`}
+                      >
+                        {prod.is_active ? 'Aktif' : 'Non-aktif'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );

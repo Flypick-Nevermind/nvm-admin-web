@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
 import { Voucher } from '@/types';
-import { fetchVouchers, saveVouchers } from '@/lib/api';
+import { fetchVouchers, saveVouchers, parseCleanNumber } from '@/lib/api';
 
 export default function VouchersPage() {
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
@@ -23,9 +23,15 @@ export default function VouchersPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    code: string;
+    discount_type: 'percentage' | 'fixed';
+    discount_value: number | string;
+    min_spend: number | string;
+    quota: number | string;
+  }>({
     code: '',
-    discount_type: 'percentage' as 'percentage' | 'fixed',
+    discount_type: 'percentage',
     discount_value: 5,
     min_spend: 100000,
     quota: 100,
@@ -229,11 +235,13 @@ export default function VouchersPage() {
                     Nilai Diskon
                   </label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="0"
                     required
-                    min={1}
                     value={form.discount_value}
-                    onChange={(e) => setForm({ ...form, discount_value: Number(e.target.value) })}
+                    onChange={(e) => setForm({ ...form, discount_value: parseCleanNumber(e.target.value) })}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500"
                   />
                 </div>
@@ -244,10 +252,12 @@ export default function VouchersPage() {
                   Minimum Belanja (Rp)
                 </label>
                 <input
-                  type="number"
-                  step={10000}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder="0"
                   value={form.min_spend}
-                  onChange={(e) => setForm({ ...form, min_spend: Number(e.target.value) })}
+                  onChange={(e) => setForm({ ...form, min_spend: parseCleanNumber(e.target.value) })}
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500"
                 />
               </div>
@@ -257,10 +267,12 @@ export default function VouchersPage() {
                   Kuota Penggunaan
                 </label>
                 <input
-                  type="number"
-                  min={1}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder="0"
                   value={form.quota}
-                  onChange={(e) => setForm({ ...form, quota: Number(e.target.value) })}
+                  onChange={(e) => setForm({ ...form, quota: parseCleanNumber(e.target.value) })}
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500"
                 />
               </div>

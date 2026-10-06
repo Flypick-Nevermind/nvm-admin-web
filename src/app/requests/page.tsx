@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
 import { BagRequest, BagRequestStatus } from '@/types';
-import { fetchBagRequests, saveBagRequests, createProduct, fetchCategories } from '@/lib/api';
+import { fetchBagRequests, saveBagRequests, createProduct, fetchCategories, parseCleanNumber } from '@/lib/api';
 
 const STATUS_CONFIG: Record<BagRequestStatus, { label: string; color: string; icon: React.ElementType }> = {
   pending: {
@@ -60,15 +60,28 @@ export default function RequestsPage() {
   const [notification, setNotification] = useState<string | null>(null);
 
   // Supplier update form state
-  const [supplierForm, setSupplierForm] = useState({
-    status: 'searching' as BagRequestStatus,
+  const [supplierForm, setSupplierForm] = useState<{
+    status: BagRequestStatus;
+    supplier_link: string;
+    supplier_cost_cny: number | string;
+    quoted_price_idr: number | string;
+  }>({
+    status: 'searching',
     supplier_link: '',
     supplier_cost_cny: 0,
     quoted_price_idr: 0,
   });
 
   // Convert to product form state
-  const [convertForm, setConvertForm] = useState({
+  const [convertForm, setConvertForm] = useState<{
+    product_name: string;
+    product_description: string;
+    category_type_id: string;
+    variant_name: string;
+    variant_price: number | string;
+    variant_qty: number | string;
+    image_url: string;
+  }>({
     product_name: '',
     product_description: '',
     category_type_id: '',
@@ -482,11 +495,13 @@ export default function RequestsPage() {
                     Modal Supplier (¥ RMB)
                   </label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     placeholder="Contoh: 45"
                     value={supplierForm.supplier_cost_cny}
                     onChange={(e) =>
-                      setSupplierForm({ ...supplierForm, supplier_cost_cny: Number(e.target.value) })
+                      setSupplierForm({ ...supplierForm, supplier_cost_cny: parseCleanNumber(e.target.value) })
                     }
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500"
                   />
@@ -497,12 +512,13 @@ export default function RequestsPage() {
                     Harga Penawaran Customer (IDR)
                   </label>
                   <input
-                    type="number"
-                    step={5000}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     placeholder="Contoh: 285000"
                     value={supplierForm.quoted_price_idr}
                     onChange={(e) =>
-                      setSupplierForm({ ...supplierForm, quoted_price_idr: Number(e.target.value) })
+                      setSupplierForm({ ...supplierForm, quoted_price_idr: parseCleanNumber(e.target.value) })
                     }
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500 font-semibold"
                   />
@@ -601,11 +617,13 @@ export default function RequestsPage() {
                     Stok Tersedia
                   </label>
                   <input
-                    type="number"
-                    min={1}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="0"
                     value={convertForm.variant_qty}
                     onChange={(e) =>
-                      setConvertForm({ ...convertForm, variant_qty: Number(e.target.value) })
+                      setConvertForm({ ...convertForm, variant_qty: parseCleanNumber(e.target.value) })
                     }
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500"
                   />
@@ -617,11 +635,13 @@ export default function RequestsPage() {
                   Harga Jual Akhir (IDR)
                 </label>
                 <input
-                  type="number"
-                  step={5000}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder="0"
                   value={convertForm.variant_price}
                   onChange={(e) =>
-                    setConvertForm({ ...convertForm, variant_price: Number(e.target.value) })
+                    setConvertForm({ ...convertForm, variant_price: parseCleanNumber(e.target.value) })
                   }
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-zinc-200 font-bold focus:outline-none focus:border-pink-500"
                 />
