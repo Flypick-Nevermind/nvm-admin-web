@@ -26,9 +26,10 @@ import {
 } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
 import { VariantBuilder, VariantBuilderOutput } from '@/components/VariantBuilder';
-import { Product, ProductCategoryType } from '@/types';
+import { Product, ProductCategoryType, ProductVariant, ProductVariantImage } from '@/types';
 import {
   fetchProducts,
+  fetchProductById,
   fetchCategories,
   fetchProductVariants,
   createProduct,
@@ -149,8 +150,66 @@ export default function ProductsPage() {
   const [editProductForm, setEditProductForm] = useState({
     product_name: '',
     product_description: '',
+    category_type_id: '',
+    sku: '',
+    slug: '',
+    short_description: '',
+    stock_type: 'ready-stock' as 'ready-stock' | 'pre-order' | 'sold-out',
+    lead_time_min: 14,
+    lead_time_max: 21,
+    original_price: '',
+    discount_percent: '',
+    price_import_duty: '',
+    price_shipping: '',
+    tags: '',
+    specs: [] as Array<{ label: string; value: string }>,
+    notes: [] as string[],
     is_active: true,
   });
+
+  const handleAddEditSpec = () => {
+    setEditProductForm((prev) => ({
+      ...prev,
+      specs: [...prev.specs, { label: '', value: '' }],
+    }));
+  };
+
+  const handleUpdateEditSpec = (index: number, field: 'label' | 'value', value: string) => {
+    setEditProductForm((prev) => {
+      const nextSpecs = [...prev.specs];
+      nextSpecs[index] = { ...nextSpecs[index], [field]: value };
+      return { ...prev, specs: nextSpecs };
+    });
+  };
+
+  const handleRemoveEditSpec = (index: number) => {
+    setEditProductForm((prev) => ({
+      ...prev,
+      specs: prev.specs.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleAddEditNote = () => {
+    setEditProductForm((prev) => ({
+      ...prev,
+      notes: [...prev.notes, ''],
+    }));
+  };
+
+  const handleUpdateEditNote = (index: number, value: string) => {
+    setEditProductForm((prev) => {
+      const nextNotes = [...prev.notes];
+      nextNotes[index] = value;
+      return { ...prev, notes: nextNotes };
+    });
+  };
+
+  const handleRemoveEditNote = (index: number) => {
+    setEditProductForm((prev) => ({
+      ...prev,
+      notes: prev.notes.filter((_, i) => i !== index),
+    }));
+  };
 
   // Multiple variants state for Editing Product (each variant supports multiple images)
   const [editVariants, setEditVariants] = useState<EditVariantFormItem[]>([]);
@@ -294,20 +353,85 @@ export default function ProductsPage() {
 
   const openEditModal = async (prod: Product) => {
     setEditingProduct(prod);
+
+    const initialCatId =
+      prod.ms_nevermind_product_categories?.[0]?.product_category_type_id ||
+      prod.ms_nevermind_product_categories?.[0]?.ms_nevermind_product_category_type?.product_category_type_id ||
+      categories[0]?.product_category_type_id ||
+      '';
+
+    const initialTagsString = Array.isArray(prod.tags)
+      ? prod.tags.join(', ')
+      : typeof prod.tags === 'string'
+      ? prod.tags
+      : '';
+
     setEditProductForm({
       product_name: prod.product_name || '',
       product_description: prod.product_description || '',
+      category_type_id: initialCatId,
+      sku: prod.sku || '',
+      slug: prod.slug || '',
+      short_description: prod.short_description || '',
+      stock_type: (prod.stock_type as 'ready-stock' | 'pre-order' | 'sold-out') || 'ready-stock',
+      lead_time_min: prod.lead_time_min ?? 10,
+      lead_time_max: prod.lead_time_max ?? 14,
+      original_price: prod.original_price ? String(prod.original_price) : '',
+      discount_percent: prod.discount_percent !== undefined && prod.discount_percent !== null ? String(prod.discount_percent) : '',
+      price_import_duty: prod.price_import_duty ? String(prod.price_import_duty) : '',
+      price_shipping: prod.price_shipping ? String(prod.price_shipping) : '',
+      tags: initialTagsString,
+      specs: Array.isArray(prod.specs) ? [...prod.specs] : [],
+      notes: Array.isArray(prod.notes) ? [...prod.notes] : [],
       is_active: prod.is_active ?? true,
     });
     setEditVariants([]);
     setIsLoadingEditVariants(true);
 
     try {
-      const liveVariants = await fetchProductVariants(prod.product_id);
+      const [fullProd, liveVariants] = await Promise.all([
+        fetchProductById(prod.product_id),
+        fetchProductVariants(prod.product_id),
+      ]);
+
+      if (fullProd) {
+        const freshCatId =
+          fullProd.ms_nevermind_product_categories?.[0]?.product_category_type_id ||
+          fullProd.ms_nevermind_product_categories?.[0]?.ms_nevermind_product_category_type?.product_category_type_id ||
+          initialCatId;
+
+        const freshTagsString = Array.isArray(fullProd.tags)
+          ? fullProd.tags.join(', ')
+          : typeof fullProd.tags === 'string'
+          ? fullProd.tags
+          : initialTagsString;
+
+        setEditProductForm((prev) => ({
+          ...prev,
+          product_name: fullProd.product_name ?? prev.product_name,
+          product_description: fullProd.product_description ?? prev.product_description,
+          category_type_id: freshCatId,
+          sku: fullProd.sku ?? prev.sku,
+          slug: fullProd.slug ?? prev.slug,
+          short_description: fullProd.short_description ?? prev.short_description,
+          stock_type: (fullProd.stock_type as 'ready-stock' | 'pre-order' | 'sold-out') ?? prev.stock_type,
+          lead_time_min: fullProd.lead_time_min ?? prev.lead_time_min,
+          lead_time_max: fullProd.lead_time_max ?? prev.lead_time_max,
+          original_price: fullProd.original_price ? String(fullProd.original_price) : prev.original_price,
+          discount_percent: fullProd.discount_percent !== undefined && fullProd.discount_percent !== null ? String(fullProd.discount_percent) : prev.discount_percent,
+          price_import_duty: fullProd.price_import_duty ? String(fullProd.price_import_duty) : prev.price_import_duty,
+          price_shipping: fullProd.price_shipping ? String(fullProd.price_shipping) : prev.price_shipping,
+          tags: freshTagsString,
+          specs: Array.isArray(fullProd.specs) && fullProd.specs.length > 0 ? fullProd.specs : prev.specs,
+          notes: Array.isArray(fullProd.notes) && fullProd.notes.length > 0 ? fullProd.notes : prev.notes,
+          is_active: fullProd.is_active ?? prev.is_active,
+        }));
+      }
+
       if (liveVariants && liveVariants.length > 0) {
         setEditVariants(
-          liveVariants.map((v) => {
-            const rawImages: VariantImageItem[] = (v.ms_nevermind_product_variant_images || []).map((img) => ({
+          liveVariants.map((v: ProductVariant) => {
+            const rawImages: VariantImageItem[] = (v.ms_nevermind_product_variant_images || []).map((img: ProductVariantImage) => ({
               product_variant_image_id: img.product_variant_image_id,
               product_variant_id: v.product_variant_id,
               image_provider_id: img.image_provider_id || 'IPID-000002',
@@ -466,11 +590,27 @@ export default function ProductsPage() {
     setIsSubmitting(true);
     setNotification(null);
 
-    // 1. Update basic product information (PATCH /api-admin/products)
+    // 1. Update full product information (PATCH /api-admin/products)
     const updateProdOk = await updateProduct({
       product_id: editingProduct.product_id,
       product_name: editProductForm.product_name.trim(),
       product_description: editProductForm.product_description.trim(),
+      category_type_id: editProductForm.category_type_id || undefined,
+      short_description: editProductForm.short_description.trim() || undefined,
+      sku: editProductForm.sku.trim() || undefined,
+      slug: editProductForm.slug.trim() || undefined,
+      stock_type: editProductForm.stock_type,
+      lead_time_min: editProductForm.stock_type === 'pre-order' ? Number(editProductForm.lead_time_min) || 10 : undefined,
+      lead_time_max: editProductForm.stock_type === 'pre-order' ? Number(editProductForm.lead_time_max) || 14 : undefined,
+      original_price: editProductForm.original_price ? Number(parseCleanNumber(editProductForm.original_price)) || undefined : undefined,
+      discount_percent: editProductForm.discount_percent ? Number(editProductForm.discount_percent) : undefined,
+      price_import_duty: editProductForm.price_import_duty ? Number(parseCleanNumber(editProductForm.price_import_duty)) || undefined : undefined,
+      price_shipping: editProductForm.price_shipping ? Number(parseCleanNumber(editProductForm.price_shipping)) || undefined : undefined,
+      tags: editProductForm.tags.trim()
+        ? editProductForm.tags.split(',').map((t) => t.trim()).filter(Boolean)
+        : undefined,
+      specs: editProductForm.specs.filter((s) => s.label.trim() && s.value.trim()),
+      notes: editProductForm.notes.map((n) => n.trim()).filter(Boolean),
       is_active: editProductForm.is_active,
     });
 
@@ -970,7 +1110,7 @@ export default function ProductsPage() {
          ───────────────────────────────────────────────────────────────────────────── */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-3xl max-h-[92vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-4xl max-h-[92vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-zinc-800 flex items-center justify-between sticky top-0 bg-zinc-950/95 backdrop-blur-md z-10">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400">
@@ -1424,7 +1564,7 @@ export default function ProductsPage() {
                   <h4 className="text-xs font-bold uppercase tracking-wider text-pink-400">
                     1. Informasi Produk Utama
                   </h4>
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="flex items-center gap-2 cursor-pointer bg-zinc-900/80 px-3 py-1.5 rounded-xl border border-zinc-800">
                     <span className="text-xs text-zinc-300 font-medium">Status Publikasi:</span>
                     <input
                       type="checkbox"
@@ -1434,7 +1574,7 @@ export default function ProductsPage() {
                       }
                       className="rounded accent-pink-500 w-4 h-4 cursor-pointer"
                     />
-                    <span className="text-xs font-semibold text-emerald-400">
+                    <span className={`text-xs font-semibold ${editProductForm.is_active ? 'text-emerald-400' : 'text-zinc-500'}`}>
                       {editProductForm.is_active ? 'Aktif' : 'Non-aktif'}
                     </span>
                   </label>
@@ -1455,6 +1595,153 @@ export default function ProductsPage() {
                   />
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                      Kategori Produk
+                    </label>
+                    <select
+                      value={editProductForm.category_type_id}
+                      onChange={(e) =>
+                        setEditProductForm({ ...editProductForm, category_type_id: e.target.value })
+                      }
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-pink-500"
+                    >
+                      {categories.map((c) => (
+                        <option key={c.product_category_type_id} value={c.product_category_type_id}>
+                          {c.product_category_type_name} ({c.product_category_type_id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                      Kode SKU Produk Induk <span className="text-zinc-500">(Opsional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: NVM-RDY-001"
+                      value={editProductForm.sku}
+                      onChange={(e) =>
+                        setEditProductForm({ ...editProductForm, sku: e.target.value.toUpperCase() })
+                      }
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-zinc-200 font-mono uppercase focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                      Slug URL Toko <span className="text-zinc-500">(Opsional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Otomatis dari nama produk jika kosong..."
+                      value={editProductForm.slug}
+                      onChange={(e) =>
+                        setEditProductForm({
+                          ...editProductForm,
+                          slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+                        })
+                      }
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                      Ringkasan Singkat <span className="text-zinc-500">(Subtitle produk)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Tas puffer silver Y2K aesthetic, faux leather premium..."
+                      value={editProductForm.short_description}
+                      onChange={(e) =>
+                        setEditProductForm({ ...editProductForm, short_description: e.target.value })
+                      }
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Tipe Ketersediaan Produk: Ready Stock vs Pre-Order */}
+                <div className="p-4 rounded-2xl bg-zinc-900/60 border border-zinc-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-zinc-200 uppercase tracking-wider">
+                      Tipe Ketersediaan Produk
+                    </label>
+                    <span className="text-[11px] text-zinc-500">
+                      {editProductForm.stock_type === 'ready-stock' ? 'Barang fisik ada di gudang' : 'Pemesanan PO luar negeri'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditProductForm({ ...editProductForm, stock_type: 'ready-stock' })}
+                      className={`p-3.5 rounded-xl border text-left transition flex items-start gap-3 ${
+                        editProductForm.stock_type === 'ready-stock'
+                          ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-300 shadow-sm'
+                          : 'bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                      }`}
+                    >
+                      <span className="text-xl">📦</span>
+                      <div>
+                        <p className="text-xs font-bold text-white">Ready Stock</p>
+                        <p className="text-[11px] text-zinc-400 mt-0.5">
+                          Barang fisik tersedia, siap langsung diproses & dikirim lokal.
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditProductForm({ ...editProductForm, stock_type: 'pre-order' })}
+                      className={`p-3.5 rounded-xl border text-left transition flex items-start gap-3 ${
+                        editProductForm.stock_type === 'pre-order'
+                          ? 'bg-purple-500/10 border-purple-500/50 text-purple-300 shadow-sm'
+                          : 'bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                      }`}
+                    >
+                      <span className="text-xl">✈️</span>
+                      <div>
+                        <p className="text-xs font-bold text-white">Pre-Order (PO)</p>
+                        <p className="text-[11px] text-zinc-400 mt-0.5">
+                          Barang dipesan ke supplier luar negeri dengan estimasi lead time.
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+
+                  {editProductForm.stock_type === 'pre-order' && (
+                    <div className="flex items-center gap-2 pt-2 border-t border-zinc-800/80 text-xs text-zinc-300">
+                      <span className="text-[11px] text-purple-400 font-semibold">Estimasi Lead Time:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={editProductForm.lead_time_min}
+                        onChange={(e) =>
+                          setEditProductForm({ ...editProductForm, lead_time_min: parseInt(e.target.value, 10) || 1 })
+                        }
+                        className="w-16 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-center text-xs text-white font-bold"
+                      />
+                      <span className="text-zinc-500">sampai</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={editProductForm.lead_time_max}
+                        onChange={(e) =>
+                          setEditProductForm({ ...editProductForm, lead_time_max: parseInt(e.target.value, 10) || 1 })
+                        }
+                        className="w-16 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-center text-xs text-white font-bold"
+                      />
+                      <span className="text-zinc-400">hari kerja</span>
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label className="block text-xs font-medium text-zinc-300 mb-1.5">
                     Deskripsi Lengkap
@@ -1470,13 +1757,216 @@ export default function ProductsPage() {
                 </div>
               </div>
 
-              {/* 2. Multiple Variants Section with Multiple Photos */}
+              {/* 2. Harga Coret, Estimasi Biaya & Promosi (Opsional) */}
+              <div className="space-y-4 pt-4 border-t border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-pink-400 flex items-center gap-1.5">
+                      <Percent className="w-3.5 h-3.5" />
+                      2. Harga Coret, Estimasi Biaya & Promosi (Opsional)
+                    </h4>
+                    <p className="text-[11px] text-zinc-500 mt-0.5">
+                      Dipergunakan untuk badge diskon toko, kalkulator checkout, dan promo banner.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-400 mb-1">
+                      Harga Normal / Coret (Rp)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 250000"
+                      value={editProductForm.original_price}
+                      onChange={(e) =>
+                        setEditProductForm({ ...editProductForm, original_price: e.target.value })
+                      }
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-400 mb-1">
+                      Diskon (%)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      placeholder="Contoh: 20"
+                      value={editProductForm.discount_percent}
+                      onChange={(e) =>
+                        setEditProductForm({ ...editProductForm, discount_percent: e.target.value })
+                      }
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-400 mb-1">
+                      Est. Bea Masuk / Impor (Rp)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 35000"
+                      value={editProductForm.price_import_duty}
+                      onChange={(e) =>
+                        setEditProductForm({ ...editProductForm, price_import_duty: e.target.value })
+                      }
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-400 mb-1">
+                      Est. Ongkos Kirim (Rp)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 20000"
+                      value={editProductForm.price_shipping}
+                      onChange={(e) =>
+                        setEditProductForm({ ...editProductForm, price_shipping: e.target.value })
+                      }
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Spesifikasi Teknis & Catatan Tambahan (Opsional) */}
+              <div className="space-y-4 pt-4 border-t border-zinc-800">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-pink-400 flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5" />
+                    3. Spesifikasi Teknis & Catatan Tambahan (Opsional)
+                  </h4>
+                  <p className="text-[11px] text-zinc-500 mt-0.5">
+                    Informasi spesifikasi detail produk, tagar pencarian, dan catatan penting untuk pesanan customer.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-300 mb-1.5 flex items-center gap-1">
+                    <Tag className="w-3.5 h-3.5 text-pink-400" />
+                    Kata Kunci Pencarian / Tags <span className="text-zinc-500 font-normal">(Opsional, pisahkan dengan koma)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: bow, tote bag, y2k aesthetic, viral korea"
+                    value={editProductForm.tags}
+                    onChange={(e) =>
+                      setEditProductForm({ ...editProductForm, tags: e.target.value })
+                    }
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-pink-500"
+                  />
+                </div>
+
+                {/* Spesifikasi Teknis Dinamis */}
+                <div className="p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-zinc-200">
+                      Spesifikasi Detail Produk ({editProductForm.specs.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleAddEditSpec}
+                      className="px-2.5 py-1 text-xs rounded-lg bg-pink-500/10 text-pink-400 hover:bg-pink-500/20 border border-pink-500/30 flex items-center gap-1 font-medium transition cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Tambah Baris
+                    </button>
+                  </div>
+
+                  {editProductForm.specs.length === 0 ? (
+                    <p className="text-[11px] text-zinc-500 italic">
+                      Belum ada spesifikasi. Klik tombol di atas untuk menambahkan (misal: Bahan, Dimensi, Berat).
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {editProductForm.specs.map((spec, sIdx) => (
+                        <div key={sIdx} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="Label (contoh: Dimensi)"
+                            value={spec.label}
+                            onChange={(e) => handleUpdateEditSpec(sIdx, 'label', e.target.value)}
+                            className="w-1/3 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Nilai (contoh: 24 x 15 x 8 cm)"
+                            value={spec.value}
+                            onChange={(e) => handleUpdateEditSpec(sIdx, 'value', e.target.value)}
+                            className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEditSpec(sIdx)}
+                            className="p-1.5 text-zinc-500 hover:text-red-400 rounded-lg hover:bg-zinc-800/60 transition cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Catatan Penting Pesanan Dinamis */}
+                <div className="p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-zinc-200">
+                      Catatan Penting Pesanan ({editProductForm.notes.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleAddEditNote}
+                      className="px-2.5 py-1 text-xs rounded-lg bg-pink-500/10 text-pink-400 hover:bg-pink-500/20 border border-pink-500/30 flex items-center gap-1 font-medium transition cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Tambah Catatan
+                    </button>
+                  </div>
+
+                  {editProductForm.notes.length === 0 ? (
+                    <p className="text-[11px] text-zinc-500 italic">
+                      Belum ada catatan. Tambahkan peringatan pengiriman, ketentuan komplain, atau info garansi.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {editProductForm.notes.map((note, nIdx) => (
+                        <div key={nIdx} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="Contoh: Wajib video unboxing untuk klaim retur cacat pabrik"
+                            value={note}
+                            onChange={(e) => handleUpdateEditNote(nIdx, e.target.value)}
+                            className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEditNote(nIdx)}
+                            className="p-1.5 text-zinc-500 hover:text-red-400 rounded-lg hover:bg-zinc-800/60 transition cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 4. Multiple Variants Section with Multiple Photos */}
               <div className="space-y-4 pt-4 border-t border-zinc-800">
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="text-xs font-bold uppercase tracking-wider text-pink-400 flex items-center gap-1.5">
                       <Layers className="w-4 h-4" />
-                      2. Variasi Produk ({editVariants.length} Varian Terdaftar)
+                      4. Variasi Produk ({editVariants.length} Varian Terdaftar)
                     </h4>
                     <p className="text-[11px] text-zinc-500">
                       Kelola nama, harga, stok, dan foto untuk setiap varian yang terdaftar di database.

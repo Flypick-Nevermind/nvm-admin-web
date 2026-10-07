@@ -305,9 +305,10 @@ export async function updateProduct(payload: {
   product_description?: string;
   short_description?: string;
   slug?: string;
+  category_type_id?: string;
   variant_label?: string;
   sku?: string;
-  stock_type?: 'ready-stock' | 'pre-order';
+  stock_type?: 'ready-stock' | 'pre-order' | 'sold-out';
   lead_time_min?: number;
   lead_time_max?: number;
   price_base?: number;
@@ -323,9 +324,15 @@ export async function updateProduct(payload: {
   is_active: boolean;
 }): Promise<boolean> {
   try {
+    const body: Record<string, unknown> = { ...payload };
+    if (payload.category_type_id) {
+      body.ms_nevermind_product_category = [
+        { product_category_type_id: payload.category_type_id },
+      ];
+    }
     const res = await adminApiClient<{ success: boolean }>('/products', {
       method: 'PATCH',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
     return res.success;
   } catch (err) {
