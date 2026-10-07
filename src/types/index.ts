@@ -1,3 +1,36 @@
+
+export interface ProductOptionValue {
+  id: string;
+  name: string;
+  subtitle?: string;
+  hex?: string;
+  image_index?: number;
+  image?: string;
+}
+
+export interface ProductOption {
+  id: string;
+  name: string;
+  type?: 'text' | 'color' | 'size';
+  values: ProductOptionValue[];
+}
+
+export interface ProductSpec {
+  label: string;
+  value: string;
+}
+
+export interface ProductSku {
+  id: string;
+  sku?: string;
+  stock_type?: 'ready-stock' | 'pre-order';
+  options: Record<string, string>;
+  price_base: number;
+  original_price?: number;
+  stock?: number;
+  image?: string;
+}
+
 export type OrderStatus =
   | 'payment_confirmed'
   | 'ordered_to_supplier'
@@ -54,6 +87,23 @@ export interface Product {
   updated_at?: string;
   ms_nevermind_product_categories?: ProductCategoryRelation[];
   ms_nevermind_product_variants?: ProductVariant | ProductVariant[];
+  slug?: string;
+  short_description?: string;
+  sku?: string;
+  stock_type?: 'ready-stock' | 'pre-order' | 'sold-out';
+  lead_time_min?: number;
+  lead_time_max?: number;
+  price_base?: number;
+  price_import_duty?: number;
+  price_shipping?: number;
+  original_price?: number;
+  discount_percent?: number;
+  tags?: string[];
+  specs?: ProductSpec[];
+  notes?: string[];
+  variant_label?: string;
+  options?: ProductOption[];
+  skus?: ProductSku[];
   all_variants?: ProductVariant[];
 }
 

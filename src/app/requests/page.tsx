@@ -99,6 +99,7 @@ export default function RequestsPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, []);
 
@@ -159,7 +160,7 @@ export default function RequestsPage() {
     if (!selectedReq) return;
 
     setIsSubmitting(true);
-    const success = await createProduct({
+    const res = await createProduct({
       product_name: convertForm.product_name,
       product_description: convertForm.product_description,
       category_type_id: convertForm.category_type_id,
@@ -171,7 +172,7 @@ export default function RequestsPage() {
 
     setIsSubmitting(false);
 
-    if (success) {
+    if (res.success) {
       // Mark request as converted
       const updated = requests.map((r) =>
         r.request_id === selectedReq.request_id
@@ -336,7 +337,7 @@ export default function RequestsPage() {
                               </p>
                               {req.notes && (
                                 <p className="text-xs text-zinc-400 line-clamp-1 mt-0.5">
-                                  "{req.notes}"
+                                  &quot;{req.notes}&quot;
                                 </p>
                               )}
                             </div>

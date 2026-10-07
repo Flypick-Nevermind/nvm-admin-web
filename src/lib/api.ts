@@ -1,4 +1,4 @@
-import { Product, ProductCategoryType, Order, Voucher, OrderStatus, ProductVariant } from '@/types';
+import { Product, ProductCategoryType, Order, Voucher, OrderStatus, ProductVariant, ProductOption, ProductSku } from '@/types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://service-nvm-production.up.railway.app/api-admin';
 
@@ -106,6 +106,60 @@ export function formatImageUrl(url: string | null | undefined): string {
 }
 
 
+
+/**
+ * Upload single image file directly to Wasabi cloud storage via POST /api-admin/files
+ * Returns a permanent, cached media streaming proxy URL: ${origin}/api/files/media/${key}
+ */
+export async function uploadImageFile(
+  file: File
+): Promise<{ success: boolean; url?: string; key?: string; message?: string }> {
+  try {
+    const token = getAdminToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const cleanBase = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+    const url = `${cleanBase}/files`;
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      return { success: false, message: `Upload gagal [${res.status}]: ${errText}` };
+    }
+
+    const json = await res.json();
+    if (!json.success || !json.data) {
+      return { success: false, message: json.message || 'Gagal mengupload file ke Wasabi' };
+    }
+
+    const fileData = json.data;
+    const apiOrigin = cleanBase.replace(/\/api-admin\/?$/, '');
+    const mediaProxyUrl = `${apiOrigin}/api/files/media/${fileData.key}`;
+
+    return {
+      success: true,
+      url: mediaProxyUrl,
+      key: fileData.key,
+      message: 'Foto berhasil diupload ke Wasabi',
+    };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (err: any) {
+    console.error('Error uploading file to Wasabi:', err);
+    return { success: false, message: err?.message || 'Gagal mengupload file ke Wasabi' };
+  }
+}
+
 export interface ProductVariantItemInput {
   variant_name: string;
   variant_description?: string;
@@ -117,8 +171,25 @@ export interface ProductVariantItemInput {
 
 export async function createProduct(payload: {
   product_name: string;
+  sku?: string;
+  slug?: string;
+  short_description?: string;
+  stock_type?: 'ready-stock' | 'pre-order';
+  lead_time_min?: number;
+  lead_time_max?: number;
+  price_base?: number;
+  original_price?: number;
+  discount_percent?: number;
+  price_import_duty?: number;
+  price_shipping?: number;
+  tags?: string[] | string;
+  specs?: Array<{ label: string; value: string }>;
+  notes?: string[];
   product_description: string;
   category_type_id: string;
+  variant_label?: string;
+  options?: ProductOption[];
+  skus?: ProductSku[];
   variant_name?: string;
   variant_description?: string;
   variant_price?: number | string;
@@ -126,7 +197,7 @@ export async function createProduct(payload: {
   image_url?: string;
   image_urls?: string[];
   variants?: ProductVariantItemInput[];
-}): Promise<boolean> {
+}): Promise<{ success: boolean; message?: string }> {
   // Support both array of variants or single fallback
   const variantList: ProductVariantItemInput[] =
     payload.variants && payload.variants.length > 0
@@ -143,17 +214,45 @@ export async function createProduct(payload: {
 
   const body = {
     product_name: payload.product_name,
+    sku: payload.sku,
+    slug: payload.slug,
+    short_description: payload.short_description,
+    stock_type: payload.stock_type || 'ready-stock',
+    lead_time_min: payload.lead_time_min,
+    lead_time_max: payload.lead_time_max,
+    price_base: payload.price_base,
+    original_price: payload.original_price,
+    discount_percent: payload.discount_percent,
+    price_import_duty: payload.price_import_duty,
+    price_shipping: payload.price_shipping,
+    tags: payload.tags,
+    specs: payload.specs,
+    notes: payload.notes,
     product_description: payload.product_description,
+    variant_label: payload.variant_label,
+    options: payload.options,
+    skus: payload.skus,
     ms_nevermind_product_category: payload.category_type_id
       ? [{ product_category_type_id: payload.category_type_id }]
       : [],
     ms_nevermind_product_variant: variantList.map((v) => {
-      const urls = (v.image_urls && v.image_urls.length > 0
+      let urls = (v.image_urls && v.image_urls.length > 0
         ? v.image_urls
         : v.image_url
         ? [v.image_url]
         : []
-      ).filter(Boolean);
+      )
+        .map((u) => (typeof u === 'string' ? u.trim() : ''))
+        .filter(Boolean);
+
+      // Backend requirement: each variant MUST have at least 1 image
+      if (urls.length === 0) {
+        const anyAvailableImage = variantList
+          .flatMap((item) => item.image_urls || [item.image_url])
+          .find((u) => u && typeof u === 'string' && u.trim().length > 0);
+
+        urls = [anyAvailableImage || 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=600&q=80'];
+      }
 
       const images = urls.map((url) => ({
         image_provider_id: 'IPID-000002',
@@ -175,17 +274,52 @@ export async function createProduct(payload: {
       method: 'POST',
       body: JSON.stringify(body),
     });
-    return res.success;
-  } catch (err) {
+    return { success: res.success, message: 'Produk berhasil dibuat' };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } catch (err: any) {
     console.error('Create product failed:', err);
-    return false;
+    let errorMessage = err?.message || 'Gagal membuat produk di backend.';
+    try {
+      const match = err?.message?.match(/API Error \[\d+\]: ([\s\S]*)/);
+      if (match && match[1]) {
+        const parsed = JSON.parse(match[1]);
+        if (parsed.errors && Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+          errorMessage = parsed.errors
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .map((e: any) => e.message || JSON.stringify(e))
+            .join(' • ');
+        } else if (parsed.message) {
+          errorMessage = parsed.message;
+        }
+      }
+    } catch {
+      // Keep errorMessage
+    }
+    return { success: false, message: errorMessage };
   }
 }
 
 export async function updateProduct(payload: {
   product_id: string;
   product_name: string;
-  product_description: string;
+  product_description?: string;
+  short_description?: string;
+  slug?: string;
+  variant_label?: string;
+  sku?: string;
+  stock_type?: 'ready-stock' | 'pre-order';
+  lead_time_min?: number;
+  lead_time_max?: number;
+  price_base?: number;
+  original_price?: number;
+  discount_percent?: number;
+  price_import_duty?: number;
+  price_shipping?: number;
+  tags?: string[] | string;
+  specs?: Array<{ label: string; value: string }>;
+  notes?: string[];
+  options?: ProductOption[];
+  skus?: ProductSku[];
   is_active: boolean;
 }): Promise<boolean> {
   try {

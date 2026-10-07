@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Package,
+  Upload,
+  Loader2,
   Plus,
   Search,
   Filter,
@@ -19,11 +21,12 @@ import {
   Tag,
   Boxes,
   Check,
-  ChevronDown,
-  ChevronUp,
+  Sliders,
+  Percent,
 } from 'lucide-react';
 import { AdminHeader } from '@/components/AdminHeader';
-import { Product, ProductCategoryType, ProductVariant } from '@/types';
+import { VariantBuilder, VariantBuilderOutput } from '@/components/VariantBuilder';
+import { Product, ProductCategoryType } from '@/types';
 import {
   fetchProducts,
   fetchCategories,
@@ -33,21 +36,13 @@ import {
   updateMultipleProductVariants,
   deleteProductVariant,
   deleteProduct,
-  ProductVariantItemInput,
   UpdateProductVariantInput,
   VariantImageItem,
   parseCleanNumber,
   formatImageUrl,
+  uploadImageFile,
 } from '@/lib/api';
 
-// Interface for new product variant form state with multiple image URLs
-interface CreateVariantFormItem {
-  variant_name: string;
-  variant_description: string;
-  variant_price: number | string;
-  variant_qty: number | string;
-  image_urls: string[];
-}
 
 // Interface for editing product variant form state with multiple images
 interface EditVariantFormItem {
@@ -83,19 +78,72 @@ export default function ProductsPage() {
   const [createForm, setCreateForm] = useState({
     product_name: '',
     product_description: '',
+    short_description: '',
     category_type_id: '',
+    sku: '',
+    slug: '',
+    stock_type: 'ready-stock' as 'ready-stock' | 'pre-order',
+    lead_time_min: 10,
+    lead_time_max: 14,
+    original_price: '',
+    discount_percent: '',
+    price_import_duty: '',
+    price_shipping: '',
+    tags: '',
+    specs: [] as Array<{ label: string; value: string }>,
+    notes: [] as string[],
   });
 
-  // Multiple variants state for New Product (each variant supports multiple image URLs)
-  const [createVariants, setCreateVariants] = useState<CreateVariantFormItem[]>([
-    {
-      variant_name: 'Regular',
-      variant_description: '',
-      variant_price: 250000,
-      variant_qty: 10,
-      image_urls: ['https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=600&q=80'],
-    },
-  ]);
+  const handleAddSpec = () => {
+    setCreateForm((prev) => ({
+      ...prev,
+      specs: [...prev.specs, { label: '', value: '' }],
+    }));
+  };
+
+  const handleUpdateSpec = (index: number, field: 'label' | 'value', value: string) => {
+    setCreateForm((prev) => {
+      const nextSpecs = [...prev.specs];
+      nextSpecs[index] = { ...nextSpecs[index], [field]: value };
+      return { ...prev, specs: nextSpecs };
+    });
+  };
+
+  const handleRemoveSpec = (index: number) => {
+    setCreateForm((prev) => ({
+      ...prev,
+      specs: prev.specs.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleAddNote = () => {
+    setCreateForm((prev) => ({
+      ...prev,
+      notes: [...prev.notes, ''],
+    }));
+  };
+
+  const handleUpdateNote = (index: number, value: string) => {
+    setCreateForm((prev) => {
+      const nextNotes = [...prev.notes];
+      nextNotes[index] = value;
+      return { ...prev, notes: nextNotes };
+    });
+  };
+
+  const handleRemoveNote = (index: number) => {
+    setCreateForm((prev) => ({
+      ...prev,
+      notes: prev.notes.filter((_, i) => i !== index),
+    }));
+  };
+
+  // Dynamic multiple variants state for New Product
+  const [variantOutput, setVariantOutput] = useState<VariantBuilderOutput | null>(null);
+
+  const handleVariantChange = useCallback((output: VariantBuilderOutput) => {
+    setVariantOutput(output);
+  }, []);
 
   // Form State for Editing Product Info
   const [editProductForm, setEditProductForm] = useState({
@@ -106,7 +154,7 @@ export default function ProductsPage() {
 
   // Multiple variants state for Editing Product (each variant supports multiple images)
   const [editVariants, setEditVariants] = useState<EditVariantFormItem[]>([]);
-  const [activeVariantTab, setActiveVariantTab] = useState<number>(0);
+  const [uploadingVariantIndex, setUploadingVariantIndex] = useState<number | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -148,76 +196,11 @@ export default function ProductsPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, []);
 
-  // ─── Create Product Handlers ──────────────────────────────────────────────
-
-  const handleAddCreateVariant = () => {
-    const first = createVariants[0];
-    setCreateVariants((prev) => [
-      ...prev,
-      {
-        variant_name: `Varian #${prev.length + 1}`,
-        variant_description: '',
-        variant_price: first?.variant_price || 250000,
-        variant_qty: 10,
-        image_urls: first?.image_urls?.[0] ? [first.image_urls[0]] : ['https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=600&q=80'],
-      },
-    ]);
-  };
-
-  const handleRemoveCreateVariant = (index: number) => {
-    if (createVariants.length <= 1) return;
-    setCreateVariants((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleUpdateCreateVariantField = (
-    index: number,
-    field: keyof Omit<CreateVariantFormItem, 'image_urls'>,
-    value: string | number
-  ) => {
-    setCreateVariants((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, [field]: value } : item))
-    );
-  };
-
-  const handleAddCreateVariantImage = (variantIndex: number) => {
-    setCreateVariants((prev) =>
-      prev.map((item, i) =>
-        i === variantIndex ? { ...item, image_urls: [...item.image_urls, ''] } : item
-      )
-    );
-  };
-
-  const handleRemoveCreateVariantImage = (variantIndex: number, imageIndex: number) => {
-    setCreateVariants((prev) =>
-      prev.map((item, i) => {
-        if (i !== variantIndex) return item;
-        if (item.image_urls.length <= 1) return item;
-        return {
-          ...item,
-          image_urls: item.image_urls.filter((_, imgI) => imgI !== imageIndex),
-        };
-      })
-    );
-  };
-
-  const handleUpdateCreateVariantImage = (
-    variantIndex: number,
-    imageIndex: number,
-    value: string
-  ) => {
-    const formatted = formatImageUrl(value);
-    setCreateVariants((prev) =>
-      prev.map((item, i) => {
-        if (i !== variantIndex) return item;
-        const newUrls = [...item.image_urls];
-        newUrls[imageIndex] = formatted;
-        return { ...item, image_urls: newUrls };
-      })
-    );
-  };
+  // ─── Create Product Handler ───────────────────────────────────────────────
 
   const handleCreateProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -226,9 +209,18 @@ export default function ProductsPage() {
       return;
     }
 
-    for (let i = 0; i < createVariants.length; i++) {
-      if (!createVariants[i].variant_name.trim()) {
-        setNotification({ type: 'error', message: `Nama untuk Varian #${i + 1} wajib diisi!` });
+    if (!variantOutput || variantOutput.variants.length === 0) {
+      setNotification({
+        type: 'error',
+        message: 'Pengaturan varian produk belum lengkap! Tambahkan minimal 1 opsi varian.',
+      });
+      return;
+    }
+
+    for (let i = 0; i < variantOutput.variants.length; i++) {
+      const v = variantOutput.variants[i];
+      if (!v.variant_name.trim()) {
+        setNotification({ type: 'error', message: `Nama untuk varian #${i + 1} tidak boleh kosong!` });
         return;
       }
     }
@@ -236,47 +228,64 @@ export default function ProductsPage() {
     setIsSubmitting(true);
     setNotification(null);
 
-    const success = await createProduct({
+    const result = await createProduct({
       product_name: createForm.product_name.trim(),
       product_description: createForm.product_description.trim(),
+      short_description: createForm.short_description.trim() || undefined,
       category_type_id: createForm.category_type_id || (categories[0]?.product_category_type_id ?? ''),
-      variants: createVariants.map((v) => ({
-        variant_name: v.variant_name,
-        variant_description: v.variant_description,
-        variant_price: v.variant_price,
-        variant_qty: v.variant_qty,
-        image_urls: v.image_urls.filter((url) => url.trim().length > 0),
-      })),
+      sku: createForm.sku.trim() || undefined,
+      slug: createForm.slug.trim() || undefined,
+      stock_type: createForm.stock_type,
+      lead_time_min: createForm.stock_type === 'pre-order' ? Number(createForm.lead_time_min) || 10 : undefined,
+      lead_time_max: createForm.stock_type === 'pre-order' ? Number(createForm.lead_time_max) || 14 : undefined,
+      original_price: createForm.original_price ? Number(parseCleanNumber(createForm.original_price)) || undefined : undefined,
+      discount_percent: createForm.discount_percent ? Number(createForm.discount_percent) : undefined,
+      price_import_duty: createForm.price_import_duty ? Number(parseCleanNumber(createForm.price_import_duty)) || undefined : undefined,
+      price_shipping: createForm.price_shipping ? Number(parseCleanNumber(createForm.price_shipping)) || undefined : undefined,
+      tags: createForm.tags.trim()
+        ? createForm.tags.split(',').map((t) => t.trim()).filter(Boolean)
+        : undefined,
+      specs: createForm.specs.filter((s) => s.label.trim() && s.value.trim()),
+      notes: createForm.notes.map((n) => n.trim()).filter(Boolean),
+      variant_label: variantOutput.variant_label,
+      options: variantOutput.options,
+      skus: variantOutput.skus,
+      variants: variantOutput.variants,
     });
 
     setIsSubmitting(false);
 
-    if (success) {
+    if (result.success) {
       setNotification({
         type: 'success',
-        message: `Produk baru berhasil dibuat dengan ${createVariants.length} varian di backend Railway!`,
+        message: `Produk baru berhasil dibuat dengan ${variantOutput.variants.length} variasi di backend Railway!`,
       });
       setIsCreateModalOpen(false);
       // Reset form
       setCreateForm({
         product_name: '',
         product_description: '',
+        short_description: '',
         category_type_id: categories[0]?.product_category_type_id || '',
+        sku: '',
+        slug: '',
+        stock_type: 'ready-stock',
+        lead_time_min: 10,
+        lead_time_max: 14,
+        original_price: '',
+        discount_percent: '',
+        price_import_duty: '',
+        price_shipping: '',
+        tags: '',
+        specs: [],
+        notes: [],
       });
-      setCreateVariants([
-        {
-          variant_name: 'Regular',
-          variant_description: '',
-          variant_price: 250000,
-          variant_qty: 10,
-          image_urls: ['https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=600&q=80'],
-        },
-      ]);
+      setVariantOutput(null);
       loadData();
     } else {
       setNotification({
         type: 'error',
-        message: 'Gagal menambahkan produk ke backend. Periksa payload atau koneksi API.',
+        message: result.message || 'Gagal membuat produk baru di backend. Periksa log konsol.',
       });
     }
   };
@@ -285,7 +294,6 @@ export default function ProductsPage() {
 
   const openEditModal = async (prod: Product) => {
     setEditingProduct(prod);
-    setActiveVariantTab(0);
     setEditProductForm({
       product_name: prod.product_name || '',
       product_description: prod.product_description || '',
@@ -380,53 +388,57 @@ export default function ProductsPage() {
     );
   };
 
-  const handleAddEditVariantImage = (variantIndex: number) => {
-    setEditVariants((prev) =>
-      prev.map((item, i) => {
-        if (i !== variantIndex) return item;
-        return {
-          ...item,
-          images: [
-            ...item.images,
-            {
-              product_variant_id: item.product_variant_id,
-              image_provider_id: 'IPID-000002',
-              product_variant_image_value: '',
-            },
-          ],
-        };
-      })
-    );
+  const handleUploadEditVariantPhotos = async (
+    variantIndex: number,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingVariantIndex(variantIndex);
+    const newImgs: Array<{ product_variant_image_value: string }> = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const res = await uploadImageFile(file);
+      if (res.success && res.url) {
+        newImgs.push({ product_variant_image_value: res.url });
+      } else {
+        alert(res.message || 'Gagal mengupload foto ke Wasabi');
+      }
+    }
+
+    if (newImgs.length > 0) {
+      setEditVariants((prev) =>
+        prev.map((item, idx) => {
+          if (idx !== variantIndex) return item;
+          // Filter out empty placeholder if any
+          const cleanExisting = item.images.filter(
+            (img) => img.product_variant_image_value && img.product_variant_image_value.trim().length > 0
+          );
+          return {
+            ...item,
+            images: [...cleanExisting, ...newImgs],
+          };
+        })
+      );
+    }
+
+    setUploadingVariantIndex(null);
+    e.target.value = '';
   };
+
+
+
 
   const handleRemoveEditVariantImage = (variantIndex: number, imageIndex: number) => {
     setEditVariants((prev) =>
       prev.map((item, i) => {
         if (i !== variantIndex) return item;
-        if (item.images.length <= 1) return item;
         return {
           ...item,
           images: item.images.filter((_, imgI) => imgI !== imageIndex),
         };
-      })
-    );
-  };
-
-  const handleUpdateEditVariantImage = (
-    variantIndex: number,
-    imageIndex: number,
-    value: string
-  ) => {
-    const formatted = formatImageUrl(value);
-    setEditVariants((prev) =>
-      prev.map((item, i) => {
-        if (i !== variantIndex) return item;
-        const newImages = [...item.images];
-        newImages[imageIndex] = {
-          ...newImages[imageIndex],
-          product_variant_image_value: formatted,
-        };
-        return { ...item, images: newImages };
       })
     );
   };
@@ -437,9 +449,6 @@ export default function ProductsPage() {
     const ok = await deleteProductVariant(variantId);
     if (ok) {
       setEditVariants((prev) => prev.filter((v) => v.product_variant_id !== variantId));
-      if (activeVariantTab >= editVariants.length - 1) {
-        setActiveVariantTab(Math.max(0, editVariants.length - 2));
-      }
       setNotification({
         type: 'success',
         message: `Varian "${variantName}" berhasil dihapus dari backend.`,
@@ -824,9 +833,23 @@ export default function ProductsPage() {
                               <p className="text-xs text-zinc-500 line-clamp-1 max-w-xs">
                                 {prod.product_description || 'Tanpa deskripsi'}
                               </p>
-                              <span className="text-[10px] font-mono text-zinc-600">
-                                {prod.product_id}
-                              </span>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[10px] font-mono text-zinc-600">
+                                  {prod.product_id}
+                                </span>
+                                {prod.sku && (
+                                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">
+                                    SKU: {prod.sku}
+                                  </span>
+                                )}
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                  prod.stock_type === 'pre-order'
+                                    ? 'bg-purple-500/10 border-purple-500/30 text-purple-400'
+                                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                                }`}>
+                                  {prod.stock_type === 'pre-order' ? '✈️ PO' : '📦 Ready'}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -969,7 +992,8 @@ export default function ProductsPage() {
             <form onSubmit={handleCreateProductSubmit} className="p-6 space-y-6">
               {/* 1. Basic Product Info */}
               <div className="space-y-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-pink-400">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-pink-400 flex items-center gap-1.5">
+                  <Package className="w-3.5 h-3.5" />
                   1. Informasi Produk Utama
                 </h4>
 
@@ -987,21 +1011,136 @@ export default function ProductsPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-zinc-300 mb-1.5">
-                    Kategori Produk
-                  </label>
-                  <select
-                    value={createForm.category_type_id}
-                    onChange={(e) => setCreateForm({ ...createForm, category_type_id: e.target.value })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-pink-500"
-                  >
-                    {categories.map((c) => (
-                      <option key={c.product_category_type_id} value={c.product_category_type_id}>
-                        {c.product_category_type_name} ({c.product_category_type_id})
-                      </option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                      Kategori Produk
+                    </label>
+                    <select
+                      value={createForm.category_type_id}
+                      onChange={(e) => setCreateForm({ ...createForm, category_type_id: e.target.value })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-pink-500"
+                    >
+                      {categories.map((c) => (
+                        <option key={c.product_category_type_id} value={c.product_category_type_id}>
+                          {c.product_category_type_name} ({c.product_category_type_id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                      Kode SKU Produk Induk <span className="text-zinc-500">(Opsional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: NVM-RDY-001"
+                      value={createForm.sku}
+                      onChange={(e) => setCreateForm({ ...createForm, sku: e.target.value.toUpperCase() })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-zinc-200 font-mono uppercase focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                      Slug URL Toko <span className="text-zinc-500">(Opsional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Otomatis dari nama produk jika kosong..."
+                      value={createForm.slug}
+                      onChange={(e) => setCreateForm({ ...createForm, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-300 mb-1.5">
+                      Ringkasan Singkat <span className="text-zinc-500">(Subtitle produk)</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Tas puffer silver Y2K aesthetic, faux leather premium..."
+                      value={createForm.short_description}
+                      onChange={(e) => setCreateForm({ ...createForm, short_description: e.target.value })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Tipe Ketersediaan Produk: Ready Stock vs Pre-Order */}
+                <div className="p-4 rounded-2xl bg-zinc-900/60 border border-zinc-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-zinc-200 uppercase tracking-wider">
+                      Tipe Ketersediaan Produk
+                    </label>
+                    <span className="text-[11px] text-zinc-500">
+                      {createForm.stock_type === 'ready-stock' ? 'Barang fisik ada di gudang' : 'Pemesanan PO luar negeri'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setCreateForm({ ...createForm, stock_type: 'ready-stock' })}
+                      className={`p-3.5 rounded-xl border text-left transition flex items-start gap-3 ${
+                        createForm.stock_type === 'ready-stock'
+                          ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-300 shadow-sm'
+                          : 'bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                      }`}
+                    >
+                      <span className="text-xl">📦</span>
+                      <div>
+                        <p className="text-xs font-bold text-white">Ready Stock</p>
+                        <p className="text-[11px] text-zinc-400 mt-0.5">
+                          Barang fisik tersedia, siap langsung diproses & dikirim lokal.
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCreateForm({ ...createForm, stock_type: 'pre-order' })}
+                      className={`p-3.5 rounded-xl border text-left transition flex items-start gap-3 ${
+                        createForm.stock_type === 'pre-order'
+                          ? 'bg-purple-500/10 border-purple-500/50 text-purple-300 shadow-sm'
+                          : 'bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+                      }`}
+                    >
+                      <span className="text-xl">✈️</span>
+                      <div>
+                        <p className="text-xs font-bold text-white">Pre-Order (PO)</p>
+                        <p className="text-[11px] text-zinc-400 mt-0.5">
+                          Barang dipesan ke supplier luar negeri dengan estimasi lead time.
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+
+                  {createForm.stock_type === 'pre-order' && (
+                    <div className="flex items-center gap-2 pt-2 border-t border-zinc-800/80 text-xs text-zinc-300">
+                      <span className="text-[11px] text-purple-400 font-semibold">Estimasi Lead Time:</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={createForm.lead_time_min}
+                        onChange={(e) => setCreateForm({ ...createForm, lead_time_min: parseInt(e.target.value, 10) || 1 })}
+                        className="w-16 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-center text-xs text-white font-bold"
+                      />
+                      <span className="text-zinc-500">sampai</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={createForm.lead_time_max}
+                        onChange={(e) => setCreateForm({ ...createForm, lead_time_max: parseInt(e.target.value, 10) || 1 })}
+                        className="w-16 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-center text-xs text-white font-bold"
+                      />
+                      <span className="text-zinc-400">hari kerja</span>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1018,197 +1157,208 @@ export default function ProductsPage() {
                 </div>
               </div>
 
-              {/* 2. Multiple Variants Section with Multiple Photos */}
+              {/* 2. Harga Coret, Estimasi Biaya & Promosi */}
               <div className="space-y-4 pt-4 border-t border-zinc-800">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-pink-400">
-                      2. Variasi Produk ({createVariants.length} Varian)
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-pink-400 flex items-center gap-1.5">
+                      <Percent className="w-3.5 h-3.5" />
+                      2. Harga Coret, Estimasi Biaya & Promosi (Opsional)
                     </h4>
-                    <p className="text-[11px] text-zinc-500">
-                      Setiap varian dapat memiliki nama, harga, stok, dan beberapa foto produk.
+                    <p className="text-[11px] text-zinc-500 mt-0.5">
+                      Dipergunakan untuk badge diskon toko, kalkulator checkout, dan promo banner.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleAddCreateVariant}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 border border-pink-500/30 text-xs font-semibold transition cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Tambah Varian
-                  </button>
                 </div>
 
-                <div className="space-y-5">
-                  {createVariants.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800/80 space-y-4 relative shadow-sm"
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-400 mb-1">
+                      Harga Normal / Coret (Rp)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 250000"
+                      value={createForm.original_price}
+                      onChange={(e) => setCreateForm({ ...createForm, original_price: e.target.value })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-400 mb-1">
+                      Diskon (%)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      placeholder="Contoh: 20"
+                      value={createForm.discount_percent}
+                      onChange={(e) => setCreateForm({ ...createForm, discount_percent: e.target.value })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-400 mb-1">
+                      Est. Bea Masuk / Impor (Rp)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 35000"
+                      value={createForm.price_import_duty}
+                      onChange={(e) => setCreateForm({ ...createForm, price_import_duty: e.target.value })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-400 mb-1">
+                      Est. Ongkos Kirim (Rp)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 20000"
+                      value={createForm.price_shipping}
+                      onChange={(e) => setCreateForm({ ...createForm, price_shipping: e.target.value })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 font-mono focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+                </div>
+
+
+              </div>
+
+              {/* 3. Spesifikasi Teknis & Catatan Tambahan (Opsional) */}
+              <div className="space-y-4 pt-4 border-t border-zinc-800">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-pink-400 flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5" />
+                    3. Spesifikasi Teknis & Catatan Tambahan (Opsional)
+                  </h4>
+                  <p className="text-[11px] text-zinc-500 mt-0.5">
+                    Informasi spesifikasi detail produk, tagar pencarian, dan catatan penting untuk pesanan customer.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-zinc-300 mb-1.5 flex items-center gap-1">
+                    <Tag className="w-3.5 h-3.5 text-pink-400" />
+                    Kata Kunci Pencarian / Tags <span className="text-zinc-500 font-normal">(Opsional, pisahkan dengan koma)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: bow, tote bag, y2k aesthetic, viral korea"
+                    value={createForm.tags}
+                    onChange={(e) => setCreateForm({ ...createForm, tags: e.target.value })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-pink-500"
+                  />
+                </div>
+
+                {/* Spesifikasi Teknis Dinamis */}
+                <div className="p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-semibold text-zinc-200">Spesifikasi Detail Produk</p>
+                      <p className="text-[11px] text-zinc-500">Pasangan Label & Nilai spesifikasi (e.g. Bahan: Faux Leather, Dimensi: 20x15 cm)</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddSpec}
+                      className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-pink-300 text-xs font-medium flex items-center gap-1 transition"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-pink-500/20 text-pink-400 flex items-center justify-center text-[10px]">
-                            {idx + 1}
-                          </span>
-                          Varian #{idx + 1}
-                        </span>
-                        {createVariants.length > 1 && (
+                      <Plus className="w-3 h-3" />
+                      Tambah Baris
+                    </button>
+                  </div>
+
+                  {createForm.specs.length > 0 && (
+                    <div className="space-y-2">
+                      {createForm.specs.map((spec, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="Label (e.g. Bahan)"
+                            value={spec.label}
+                            onChange={(e) => handleUpdateSpec(idx, 'label', e.target.value)}
+                            className="w-1/3 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Nilai (e.g. Premium PU Leather)"
+                            value={spec.value}
+                            onChange={(e) => handleUpdateSpec(idx, 'value', e.target.value)}
+                            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
+                          />
                           <button
                             type="button"
-                            onClick={() => handleRemoveCreateVariant(idx)}
-                            className="text-zinc-500 hover:text-rose-400 p-1 rounded transition text-xs flex items-center gap-1 cursor-pointer"
+                            onClick={() => handleRemoveSpec(idx)}
+                            className="p-1.5 text-zinc-500 hover:text-rose-400 rounded-lg hover:bg-zinc-800 transition"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
-                            Hapus Varian
                           </button>
-                        )}
-                      </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[11px] font-medium text-zinc-300 mb-1">
-                            Nama Varian <span className="text-pink-400">*</span>
-                          </label>
+                {/* Catatan Khusus Toko */}
+                <div className="p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-semibold text-zinc-200">Catatan Khusus & Petunjuk Perawatan</p>
+                      <p className="text-[11px] text-zinc-500">Poin-poin penting untuk customer (e.g. Garansi 7 hari, Hindari air langsung)</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddNote}
+                      className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-pink-300 text-xs font-medium flex items-center gap-1 transition"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Tambah Poin
+                    </button>
+                  </div>
+
+                  {createForm.notes.length > 0 && (
+                    <div className="space-y-2">
+                      {createForm.notes.map((note, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <span className="text-xs text-zinc-500 font-mono w-4 text-center">•</span>
                           <input
                             type="text"
-                            required
-                            placeholder="Contoh: Silver Metallic / Large"
-                            value={item.variant_name}
-                            onChange={(e) => handleUpdateCreateVariantField(idx, 'variant_name', e.target.value)}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
+                            placeholder="Tulis catatan penting..."
+                            value={note}
+                            onChange={(e) => handleUpdateNote(idx, e.target.value)}
+                            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
                           />
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-medium text-zinc-300 mb-1">
-                            Stok Awal
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            pattern="[0-9]*"
-                            placeholder="0"
-                            value={item.variant_qty}
-                            onChange={(e) =>
-                              handleUpdateCreateVariantField(idx, 'variant_qty', parseCleanNumber(e.target.value))
-                            }
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[11px] font-medium text-zinc-300 mb-1">
-                            Harga Jual (IDR) <span className="text-pink-400">*</span>
-                          </label>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-500">
-                              Rp
-                            </span>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              placeholder="0"
-                              value={item.variant_price}
-                              onChange={(e) =>
-                                handleUpdateCreateVariantField(idx, 'variant_price', parseCleanNumber(e.target.value))
-                              }
-                              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-3.5 py-2 text-xs text-zinc-200 font-semibold focus:outline-none focus:border-pink-500"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-medium text-zinc-300 mb-1">
-                            Deskripsi Varian (Opsional)
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Detail spesifik varian..."
-                            value={item.variant_description}
-                            onChange={(e) =>
-                              handleUpdateCreateVariantField(idx, 'variant_description', e.target.value)
-                            }
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Multiple Photos for this Variant */}
-                      <div className="space-y-2.5 pt-2 border-t border-zinc-800/60">
-                        <div className="flex items-center justify-between">
-                          <label className="block text-[11px] font-semibold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
-                            <ImageIcon className="w-3.5 h-3.5 text-pink-400" />
-                            Foto-foto Varian ({item.image_urls.length})
-                          </label>
                           <button
                             type="button"
-                            onClick={() => handleAddCreateVariantImage(idx)}
-                            className="inline-flex items-center gap-1 text-[11px] text-pink-400 hover:text-pink-300 font-medium cursor-pointer"
+                            onClick={() => handleRemoveNote(idx)}
+                            className="p-1.5 text-zinc-500 hover:text-rose-400 rounded-lg hover:bg-zinc-800 transition"
                           >
-                            <Plus className="w-3 h-3" /> Tambah Foto
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                          {item.image_urls.map((imgUrl, imgIdx) => (
-                            <div
-                              key={imgIdx}
-                              className="flex gap-2.5 items-center bg-zinc-950 p-2.5 rounded-xl border border-zinc-800"
-                            >
-                              <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-800 overflow-hidden shrink-0">
-                                <img
-                                  key={formatImageUrl(imgUrl)}
-                                  src={formatImageUrl(imgUrl)}
-                                  alt={`Varian ${idx + 1} Foto ${imgIdx + 1}`}
-                                  referrerPolicy="no-referrer"
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    const target = e.target as HTMLImageElement;
-                                    if (!target.src.includes('photo-1584917865442')) {
-                                      target.src =
-                                        'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=600&q=80';
-                                    }
-                                  }}
-                                />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-[10px] font-mono text-zinc-500">
-                                    Foto #{imgIdx + 1}
-                                  </span>
-                                  {item.image_urls.length > 1 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveCreateVariantImage(idx, imgIdx)}
-                                      className="text-zinc-500 hover:text-rose-400 p-0.5 rounded transition cursor-pointer"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                                <input
-                                  type="url"
-                                  placeholder="Link Google Drive atau URL gambar..."
-                                  value={imgUrl}
-                                  onChange={(e) =>
-                                    handleUpdateCreateVariantImage(idx, imgIdx, e.target.value)
-                                  }
-                                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-[11px] text-zinc-500 mt-2 flex items-center gap-1.5">
-                          <span>💡 Mendukung link Google Drive langsung (pastikan akses file diset <strong>Anyone with the link / Siapa saja yang memiliki link</strong>).</span>
-                        </p>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
+              </div>
+
+              {/* 2. Pengaturan Variasi Produk Dinamis */}
+              <div className="space-y-4 pt-4 border-t border-zinc-800">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-pink-400">
+                    2. Pengaturan Variasi Produk
+                  </h4>
+                  <p className="text-[11px] text-zinc-500">
+                    Kelola tingkat variasi dinamis (Warna, Ukuran, Bahan, dll) dan kombinasi harga/stok produk secara otomatis.
+                  </p>
+                </div>
+
+                <VariantBuilder onChange={handleVariantChange} />
               </div>
 
               <div className="pt-4 border-t border-zinc-800 flex items-center justify-end gap-3">
@@ -1233,7 +1383,7 @@ export default function ProductsPage() {
                   ) : (
                     <>
                       <Plus className="w-4 h-4" />
-                      Simpan & Publikasikan ({createVariants.length} Varian)
+                      Simpan & Publikasikan ({variantOutput?.variants.length || 0} Variasi)
                     </>
                   )}
                 </button>
@@ -1329,7 +1479,7 @@ export default function ProductsPage() {
                       2. Variasi Produk ({editVariants.length} Varian Terdaftar)
                     </h4>
                     <p className="text-[11px] text-zinc-500">
-                      Pilih tab varian untuk mengedit nama, harga, stok, dan multiple fotonya.
+                      Kelola nama, harga, stok, dan foto untuk setiap varian yang terdaftar di database.
                     </p>
                   </div>
                   {isLoadingEditVariants && (
@@ -1348,40 +1498,21 @@ export default function ProductsPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {/* Variant Tabs Header */}
-                    <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-zinc-800/80">
-                      {editVariants.map((v, i) => (
-                        <button
-                          key={v.product_variant_id || i}
-                          type="button"
-                          onClick={() => setActiveVariantTab(i)}
-                          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer flex items-center gap-2 ${
-                            activeVariantTab === i
-                              ? 'bg-pink-500/20 text-pink-300 border border-pink-500/30'
-                              : 'bg-zinc-900/80 text-zinc-400 hover:text-zinc-200 border border-zinc-800'
-                          }`}
-                        >
-                          <span className="w-4 h-4 rounded-full bg-zinc-800 text-[10px] flex items-center justify-center font-bold">
-                            {i + 1}
-                          </span>
-                          <span>{v.product_variant_name || `Varian #${i + 1}`}</span>
-                          <span className="text-[10px] text-zinc-500">
-                            ({v.images.length}📷 • {v.product_variant_qty} pcs)
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Active Variant Detail Card */}
-                    {editVariants[activeVariantTab] && (
-                      <div className="p-5 rounded-2xl bg-zinc-900/70 border border-zinc-800/80 space-y-4">
+                    {editVariants.map((variant, idx) => (
+                      <div
+                        key={variant.product_variant_id || idx}
+                        className="p-5 rounded-2xl bg-zinc-900/70 border border-zinc-800/80 space-y-4 shadow-sm"
+                      >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono px-2 py-0.5 rounded bg-zinc-950 border border-zinc-800 text-zinc-400">
-                              ID: {editVariants[activeVariantTab].product_variant_id}
+                            <span className="w-6 h-6 rounded-full bg-pink-500/20 text-pink-400 flex items-center justify-center text-xs font-bold">
+                              {idx + 1}
                             </span>
-                            <span className="text-xs font-semibold text-zinc-300">
-                              Varian #{activeVariantTab + 1}
+                            <span className="text-xs font-semibold text-zinc-200">
+                              {variant.product_variant_name || `Varian #${idx + 1}`}
+                            </span>
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-950 border border-zinc-800 text-zinc-500">
+                              ID: {variant.product_variant_id}
                             </span>
                           </div>
 
@@ -1390,9 +1521,9 @@ export default function ProductsPage() {
                               <span>Aktif:</span>
                               <input
                                 type="checkbox"
-                                checked={editVariants[activeVariantTab].is_active}
+                                checked={variant.is_active}
                                 onChange={(e) =>
-                                  handleUpdateEditVariantField(activeVariantTab, 'is_active', e.target.checked)
+                                  handleUpdateEditVariantField(idx, 'is_active', e.target.checked)
                                 }
                                 className="accent-pink-500 w-3.5 h-3.5 cursor-pointer"
                               />
@@ -1402,15 +1533,15 @@ export default function ProductsPage() {
                               type="button"
                               onClick={() =>
                                 handleDeleteSingleVariant(
-                                  editVariants[activeVariantTab].product_variant_id,
-                                  editVariants[activeVariantTab].product_variant_name
+                                  variant.product_variant_id,
+                                  variant.product_variant_name
                                 )
                               }
                               title="Hapus varian ini dari backend"
                               className="text-zinc-500 hover:text-rose-400 p-1 rounded transition text-xs flex items-center gap-1 cursor-pointer"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
-                              <span className="hidden sm:inline">Hapus Varian</span>
+                              <span className="hidden sm:inline">Hapus</span>
                             </button>
                           </div>
                         </div>
@@ -1423,10 +1554,10 @@ export default function ProductsPage() {
                             <input
                               type="text"
                               required
-                              value={editVariants[activeVariantTab].product_variant_name}
+                              value={variant.product_variant_name}
                               onChange={(e) =>
                                 handleUpdateEditVariantField(
-                                  activeVariantTab,
+                                  idx,
                                   'product_variant_name',
                                   e.target.value
                                 )
@@ -1444,10 +1575,10 @@ export default function ProductsPage() {
                               inputMode="numeric"
                               pattern="[0-9]*"
                               placeholder="0"
-                              value={editVariants[activeVariantTab].product_variant_qty}
+                              value={variant.product_variant_qty}
                               onChange={(e) =>
                                 handleUpdateEditVariantField(
-                                  activeVariantTab,
+                                  idx,
                                   'product_variant_qty',
                                   parseCleanNumber(e.target.value)
                                 )
@@ -1471,10 +1602,10 @@ export default function ProductsPage() {
                                 inputMode="numeric"
                                 pattern="[0-9]*"
                                 placeholder="0"
-                                value={editVariants[activeVariantTab].product_variant_price}
+                                value={variant.product_variant_price}
                                 onChange={(e) =>
                                   handleUpdateEditVariantField(
-                                    activeVariantTab,
+                                    idx,
                                     'product_variant_price',
                                     parseCleanNumber(e.target.value)
                                   )
@@ -1491,10 +1622,10 @@ export default function ProductsPage() {
                             <input
                               type="text"
                               placeholder="Keterangan spesifik varian..."
-                              value={editVariants[activeVariantTab].product_variant_description || ''}
+                              value={variant.product_variant_description || ''}
                               onChange={(e) =>
                                 handleUpdateEditVariantField(
-                                  activeVariantTab,
+                                  idx,
                                   'product_variant_description',
                                   e.target.value
                                 )
@@ -1504,79 +1635,99 @@ export default function ProductsPage() {
                           </div>
                         </div>
 
-                        {/* Multiple Photos Section for Active Variant */}
+                        {/* Multiple Photos Section for this Variant */}
                         <div className="space-y-3 pt-3 border-t border-zinc-800/80">
                           <div className="flex items-center justify-between">
                             <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
                               <ImageIcon className="w-4 h-4 text-pink-400" />
-                              Foto-foto Varian ({editVariants[activeVariantTab].images.length} Foto)
+                              Foto-foto Varian ({variant.images.filter((img) => img.product_variant_image_value && img.product_variant_image_value.trim().length > 0).length} Foto Tersimpan)
                             </label>
-                            <button
-                              type="button"
-                              onClick={() => handleAddEditVariantImage(activeVariantTab)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 border border-pink-500/20 text-xs font-semibold transition cursor-pointer"
-                            >
-                              <Plus className="w-3 h-3" /> Tambah Foto
-                            </button>
+                            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 border border-pink-500/20 text-xs font-semibold transition cursor-pointer">
+                              {uploadingVariantIndex === idx ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  Mengunggah...
+                                </>
+                              ) : (
+                                <>
+                                  <Upload className="w-3.5 h-3.5" />
+                                  + Upload Foto ke Wasabi
+                                </>
+                              )}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                disabled={uploadingVariantIndex === idx}
+                                onChange={(e) => handleUploadEditVariantPhotos(idx, e)}
+                                className="hidden"
+                              />
+                            </label>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {editVariants[activeVariantTab].images.map((img, imgIdx) => (
-                              <div
-                                key={img.product_variant_image_id || imgIdx}
-                                className="flex gap-2.5 items-center bg-zinc-950 p-2.5 rounded-xl border border-zinc-800"
-                              >
-                                <div className="w-12 h-12 rounded-lg bg-zinc-900 border border-zinc-800 overflow-hidden shrink-0">
-                                  <img
-                                    key={formatImageUrl(img.product_variant_image_value)}
-                                    src={formatImageUrl(img.product_variant_image_value)}
-                                    alt={`Varian Foto ${imgIdx + 1}`}
-                                    referrerPolicy="no-referrer"
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      const target = e.target as HTMLImageElement;
-                                      if (!target.src.includes('photo-1584917865442')) {
-                                        target.src =
-                                          'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=600&q=80';
-                                      }
-                                    }}
-                                  />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center justify-between mb-1">
-                                    <span className="text-[10px] font-mono text-zinc-500">
-                                      Foto #{imgIdx + 1}
-                                    </span>
-                                    {editVariants[activeVariantTab].images.length > 1 && (
+                          {variant.images.filter((img) => img.product_variant_image_value && img.product_variant_image_value.trim().length > 0).length === 0 ? (
+                            <label className="flex flex-col items-center justify-center p-5 border-2 border-dashed border-zinc-800 hover:border-pink-500/50 rounded-2xl bg-zinc-950/60 hover:bg-zinc-900/50 cursor-pointer transition text-center space-y-1.5">
+                              <Upload className="w-5 h-5 text-pink-400" />
+                              <span className="text-xs font-semibold text-zinc-300">
+                                {uploadingVariantIndex === idx ? 'Mengunggah ke Wasabi...' : 'Klik untuk Upload Foto Varian'}
+                              </span>
+                              <span className="text-[10px] text-zinc-500">
+                                Otomatis dikompres & disimpan permanen di Wasabi S3
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                disabled={uploadingVariantIndex === idx}
+                                onChange={(e) => handleUploadEditVariantPhotos(idx, e)}
+                                className="hidden"
+                              />
+                            </label>
+                          ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              {variant.images
+                                .filter((img) => img.product_variant_image_value && img.product_variant_image_value.trim().length > 0)
+                                .map((img, imgIdx) => (
+                                  <div
+                                    key={img.product_variant_image_id || imgIdx}
+                                    className="group relative rounded-xl bg-zinc-950 border border-zinc-800 overflow-hidden shadow-sm"
+                                  >
+                                    <div className="aspect-square w-full overflow-hidden bg-zinc-900">
+                                      <img
+                                        key={formatImageUrl(img.product_variant_image_value)}
+                                        src={formatImageUrl(img.product_variant_image_value)}
+                                        alt={`Varian Foto ${imgIdx + 1}`}
+                                        referrerPolicy="no-referrer"
+                                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                        onError={(e) => {
+                                          const target = e.target as HTMLImageElement;
+                                          if (!target.src.includes('photo-1584917865442')) {
+                                            target.src =
+                                              'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=600&q=80';
+                                          }
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="p-2 flex items-center justify-between bg-zinc-900/90 border-t border-zinc-800">
+                                      <span className="text-[10px] font-medium text-emerald-400">
+                                        ☁️ Wasabi
+                                      </span>
                                       <button
                                         type="button"
-                                        onClick={() => handleRemoveEditVariantImage(activeVariantTab, imgIdx)}
+                                        onClick={() => handleRemoveEditVariantImage(idx, imgIdx)}
                                         title="Hapus foto ini"
-                                        className="text-zinc-500 hover:text-rose-400 p-0.5 rounded transition cursor-pointer"
+                                        className="p-1 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition cursor-pointer"
                                       >
                                         <Trash2 className="w-3.5 h-3.5" />
                                       </button>
-                                    )}
+                                    </div>
                                   </div>
-                                  <input
-                                    type="url"
-                                    placeholder="Link Google Drive atau URL gambar..."
-                                    value={img.product_variant_image_value}
-                                    onChange={(e) =>
-                                      handleUpdateEditVariantImage(activeVariantTab, imgIdx, e.target.value)
-                                    }
-                                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1 text-xs text-zinc-200 focus:outline-none focus:border-pink-500"
-                                  />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                          <p className="text-[11px] text-zinc-500 mt-2 flex items-center gap-1.5">
-                            <span>💡 Mendukung link Google Drive langsung (pastikan akses file diset <strong>Anyone with the link / Siapa saja yang memiliki link</strong>).</span>
-                          </p>
+                                ))}
+                            </div>
+                          )}
                         </div>
                       </div>
-                    )}
+                    ))}
                   </div>
                 )}
               </div>
